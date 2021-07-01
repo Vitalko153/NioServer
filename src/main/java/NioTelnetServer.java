@@ -5,8 +5,11 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 
 public class NioTelnetServer {
@@ -17,7 +20,7 @@ public class NioTelnetServer {
 
     private final ByteBuffer buffer = ByteBuffer.allocate(512);
 
-    private Map<SocketAddress, String> clients = new HashMap<>();
+    private Map<SocketChannel, String> clients = new HashMap<SocketChannel, String>();
 
     public NioTelnetServer() throws Exception {
         ServerSocketChannel server = ServerSocketChannel.open();
@@ -57,6 +60,8 @@ public class NioTelnetServer {
         SocketChannel channel = (SocketChannel) key.channel();
         SocketAddress client = channel.getRemoteAddress();
         int readBytes = channel.read(buffer);
+
+        clients.putIfAbsent(channel, "qwe");  //добавляю пользовотеля
 
         if (readBytes < 0) {
             channel.close();
@@ -141,26 +146,42 @@ public class NioTelnetServer {
         return String.join(" ", servers);
     }
 
-    //Создание файла
+    //Создание файла. Добавил проверку на существование файла.
     private String createFile(String fileName, Path pathServer) throws IOException {
-        Files.createFile(Path.of(String.valueOf(pathServer), fileName)) ;
-        return "File " + fileName + " created.\n";
+        if(!Files.exists(Path.of(String.valueOf(pathServer), fileName))){
+            Files.createFile(Path.of(String.valueOf(pathServer), fileName)) ;
+            return "File " + fileName + " created.\n";
+        }else {
+            return "File " + fileName + " already exists\n";
+        }
     }
 
-    //Создание директории
+    //Создание директории. Добавил проверку на существование директории.
     private String createDirectory(String dir, Path pathServer) throws IOException {
-        Files.createDirectory(Path.of(String.valueOf(pathServer), dir));
-        return "Directory " + dir + " created.\n";
+        if(!Files.exists(Path.of(String.valueOf(pathServer), dir))){
+            Files.createDirectory(Path.of(String.valueOf(pathServer), dir));
+            return "Directory " + dir + " created.\n";
+        }else {
+            return "Directory " + dir + " already exists\n";
+        }
     }
 
-    //Удаление. Сделал перемещение в папку garbage.
+    //Удаление. Добавил рекурсивное удаление папки с файлами.
     private String remove(String fileName, Path pathServer) throws IOException {
-        Path garbage = Path.of("garbage"); //путь для корзины
-        Files.move(Path.of(String.valueOf(pathServer), fileName), Path.of(String.valueOf(garbage), fileName));
-        //После перемещение сделаю либо таймер либо по заполности удалять.
-        Files.delete(Path.of(String.valueOf(garbage), fileName));
-        //Не успел сделать рекурсивное удаление папки
-        return "File " + fileName + " moved in garbage and deleted.\n";
+        Path pathRM = Path.of(pathServer + "/" + fileName);
+        Files.walkFileTree(pathRM, new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                Files.delete(file);
+                return FileVisitResult.CONTINUE;
+            }
+            @Override
+            public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                Files.delete(dir);
+                return FileVisitResult.CONTINUE;
+            }
+        });
+        return "File/directory " + fileName + " deleted.\n";
     }
 
     //Копирование
@@ -190,10 +211,10 @@ public class NioTelnetServer {
         return "change directory " + pathServer;
     }
 
-    //смена пользователя
+    //смена пользователя. Исправил смену имени пользователя
     private String changeNick(String name, SocketAddress client) {
-        clients.putIfAbsent(client, name);
-        return "New user " + name;
+        clients.replaceAll((k, v) -> name);
+        return "New nickname " + name;
 
     }
 
